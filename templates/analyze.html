@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ cache_buster }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/default.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</head>
+<body>
+    <header>
+        <h1>Chronos</h1>
+        <p>Analyseur de cahier des charges</p>
+    </header>
+    <main>
+        <section class="analyze-section">
+            <h2>Analyse du document: {{ filename }}</h2>
+            
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    <div class="messages">
+                        {% for message in messages %}
+                            <p class="alert">{{ message }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+            
+            <div class="actions">
+                <a href="{{ url_for('home') }}" class="btn">Uploader un autre fichier</a>
+                <a href="{{ url_for('reset_analysis') }}" class="btn btn-warning">Réinitialiser l'analyse</a>
+                <button type="button" id="toggleTextBtn" class="btn" onclick="toggleExtractedText()">Afficher/Masquer le texte extrait</button>
+            </div>
+            
+            <div class="additional-info-section">
+                <h3>Informations supplémentaires pour l'analyse</h3>
+                <form action="{{ url_for('run_analysis') }}" method="POST">
+                    <div class="form-group">
+                        <label for="additional_info">Technologies, contraintes, et autres détails pertinents:</label>
+                        <textarea id="additional_info" name="additional_info" rows="5" placeholder="Exemple: Technologies: React, Node.js, MongoDB. Contraintes: Déploiement sur AWS, conformité RGPD, 1000 utilisateurs simultanés."></textarea>
+                        <p class="help-text">Ces informations seront utilisées pour personnaliser l'analyse et enrichir le contenu généré (charte projet, backlog, estimations).</p>
+                    </div>
+                    <button type="submit" class="btn btn-primary">{% if analysis_sections %}Relancer l'analyse{% else %}Analyser le cahier des charges{% endif %}</button>
+                </form>
+            </div>
+            
+            <div class="content-section" id="extractedTextSection" style="display: none;">
+                <h3>Contenu extrait du cahier des charges</h3>
+                <div class="extracted-content">
+                    <pre>{{ text }}</pre>
+                </div>
+            </div>
+            
+            {% if analysis_sections %}
+            <div class="analysis-result-section">
+                <h3>Analyse du cahier des charges</h3>
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="openTab(event, 'charte')">Charte de projet</button>
+                    <button class="tab-btn" onclick="openTab(event, 'backlog')">Backlog produit</button>
+                    <button class="tab-btn" onclick="openTab(event, 'effort')">Estimation d'effort</button>
+                    <button class="tab-btn" onclick="openTab(event, 'roadmap')">Roadmap</button>
+                    <button class="tab-btn" onclick="openTab(event, 'methodologie')">Méthodologie</button>
+                    <button class="tab-btn" onclick="openTab(event, 'risques')">Gestion des risques</button>
+                </div>
+                
+                <div id="charte" class="tab-content active">
+                    <div class="content-formatted md-content">
+                        {{ analysis_sections.project_charter|safe }}
+                    </div>
+                </div>
+                
+                <div id="backlog" class="tab-content">
+                    <div class="content-formatted md-content">
+                        {{ analysis_sections.product_backlog|safe }}
+                    </div>
+                </div>
+                
+                <div id="effort" class="tab-content">
+                    <div class="content-formatted md-content">
+                        {{ analysis_sections.effort_estimation|safe }}
+                    </div>
+                </div>
+                
+                <div id="roadmap" class="tab-content">
+                    <div class="content-formatted md-content">
+                        {{ analysis_sections.roadmap|safe }}
+                    </div>
+                </div>
+                
+                <div id="methodologie" class="tab-content">
+                    <div class="content-formatted md-content">
+                        {{ analysis_sections.methodology|safe }}
+                    </div>
+                </div>
+                
+                <div id="risques" class="tab-content">
+                    <div class="content-formatted md-content">
+                        {{ analysis_sections.risk_management|safe }}
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="analysis-section">
+                <h3>Artefacts de projet</h3>
+                <p class="info">Cliquez sur le bouton "Analyser le cahier des charges" pour lancer l'analyse détaillée et générer les artefacts du projet.</p>
+            </div>
+            {% endif %}
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2023 Chronos - Analyseur de cahier des charges</p>
+    </footer>
+
+    <script>
+        function openTab(evt, tabName) {
+            // Masquer tous les contenus des onglets
+            var tabContents = document.getElementsByClassName("tab-content");
+            for (var i = 0; i < tabContents.length; i++) {
+                tabContents[i].classList.remove("active");
+            }
+            
+            // Retirer la classe "active" de tous les boutons d'onglet
+            var tabButtons = document.getElementsByClassName("tab-btn");
+            for (var i = 0; i < tabButtons.length; i++) {
+                tabButtons[i].classList.remove("active");
+            }
+            
+            // Afficher le contenu de l'onglet actif et ajouter la classe "active" au bouton
+            document.getElementById(tabName).classList.add("active");
+            evt.currentTarget.classList.add("active");
+        }
+
+        function toggleExtractedText() {
+            var textSection = document.getElementById("extractedTextSection");
+            if (textSection.style.display === "none") {
+                textSection.style.display = "block";
+            } else {
+                textSection.style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html> 
