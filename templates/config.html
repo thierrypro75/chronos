@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration - {{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1>Configuration des APIs</h1>
+
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Provider d'IA</h5>
+            <form method="POST" action="{{ url_for('save_config') }}">
+                <div class="mb-3">
+                    <label for="ai_provider" class="form-label">Choisir le provider d'IA</label>
+                    <select class="form-select" id="ai_provider" name="ai_provider">
+                        <option value="anthropic" {% if config.AI_PROVIDER=='anthropic' %}selected{% endif %}>Anthropic
+                            (Claude)</option>
+                        <option value="openai" {% if config.AI_PROVIDER=='openai' %}selected{% endif %}>OpenAI (GPT-4)
+                        </option>
+                        <option value="openrouter" {% if config.AI_PROVIDER=='openrouter' %}selected{% endif %}>
+                            OpenRouter</option>
+                    </select>
+                </div>
+
+                <div class="mb-3 anthropic-config">
+                    <label for="anthropic_api_key" class="form-label">Clé API Anthropic</label>
+                    <input type="password" class="form-control" id="anthropic_api_key" name="anthropic_api_key"
+                        value="{{ config.ANTHROPIC_API_KEY }}">
+                    <div class="form-text">Obtenez votre clé API sur <a href="https://console.anthropic.com/"
+                            target="_blank">console.anthropic.com</a></div>
+                </div>
+
+                <div class="mb-3 anthropic-config">
+                    <label for="anthropic_model" class="form-label">Modèle Anthropic</label>
+                    <select class="form-select" id="anthropic_model" name="anthropic_model">
+                        <option value="claude-3-5-sonnet-20241022" {% if
+                            config.ANTHROPIC_MODEL=='Claude 3.5 Sonnet 2024-10-22' %}selected{% endif %}>Claude 3.5
+                            Sonnet 2024-10-22</option>
+                        <option value="claude-3-7-sonnet-20250219" {% if config.ANTHROPIC_MODEL=='Claude 3.7 Sonnet'
+                            %}selected{% endif %}>Claude 3.7 Sonnet</option>
+                    </select>
+                </div>
+
+                <div class="mb-3 openai-config">
+                    <label for="openai_api_key" class="form-label">Clé API OpenAI</label>
+                    <input type="password" class="form-control" id="openai_api_key" name="openai_api_key"
+                        value="{{ config.OPENAI_API_KEY }}">
+                    <div class="form-text">Obtenez votre clé API sur <a href="https://platform.openai.com/api-keys"
+                            target="_blank">platform.openai.com</a></div>
+                </div>
+
+                <div class="mb-3 openai-config">
+                    <label for="openai_model" class="form-label">Modèle OpenAI</label>
+                    <select class="form-select" id="openai_model" name="openai_model">
+                        <option value="gpt-4-turbo-preview" {% if config.OPENAI_MODEL=='gpt-4-turbo-preview'
+                            %}selected{% endif %}>GPT-4 Turbo</option>
+                        <option value="gpt-4" {% if config.OPENAI_MODEL=='gpt-4' %}selected{% endif %}>GPT-4</option>
+                        <option value="gpt-3.5-turbo" {% if config.OPENAI_MODEL=='gpt-3.5-turbo' %}selected{% endif %}>
+                            GPT-3.5 Turbo</option>
+                    </select>
+                </div>
+
+                <div class="mb-3 openrouter-config">
+                    <label for="openrouter_api_key" class="form-label">Clé API OpenRouter</label>
+                    <input type="password" class="form-control" id="openrouter_api_key" name="openrouter_api_key"
+                        value="{{ config.OPENROUTER_API_KEY }}">
+                    <div class="form-text">Obtenez votre clé API sur <a href="https://openrouter.ai/keys"
+                            target="_blank">openrouter.ai</a></div>
+                </div>
+
+                <div class="mb-3 openrouter-config">
+                    <label for="openrouter_model" class="form-label">Modèle OpenRouter</label>
+                    <select class="form-select" id="openrouter_model" name="openrouter_model">
+                        <option value="anthropic/claude-3-opus-20240229" {% if
+                            config.OPENROUTER_MODEL=='anthropic/claude-3-opus-20240229' %}selected{% endif %}>Claude 3
+                            Opus</option>
+                        <option value="anthropic/claude-3-sonnet-20240229" {% if
+                            config.OPENROUTER_MODEL=='anthropic/claude-3-sonnet-20240229' %}selected{% endif %}>Claude 3
+                            Sonnet</option>
+                        <option value="openai/gpt-4-turbo-preview" {% if
+                            config.OPENROUTER_MODEL=='openai/gpt-4-turbo-preview' %}selected{% endif %}>GPT-4 Turbo
+                        </option>
+                        <option value="openai/gpt-4" {% if config.OPENROUTER_MODEL=='openai/gpt-4' %}selected{% endif
+                            %}>GPT-4</option>
+                        <option value="openai/gpt-3.5-turbo" {% if config.OPENROUTER_MODEL=='openai/gpt-3.5-turbo'
+                            %}selected{% endif %}>GPT-3.5 Turbo</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Sauvegarder la configuration</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const providerSelect = document.getElementById('ai_provider');
+        const anthropicConfig = document.querySelectorAll('.anthropic-config');
+        const openaiConfig = document.querySelectorAll('.openai-config');
+        const openrouterConfig = document.querySelectorAll('.openrouter-config');
+
+        function updateVisibility() {
+            const selectedProvider = providerSelect.value;
+
+            // Cacher tous les champs
+            anthropicConfig.forEach(el => el.style.display = 'none');
+            openaiConfig.forEach(el => el.style.display = 'none');
+            openrouterConfig.forEach(el => el.style.display = 'none');
+
+            // Afficher les champs correspondants
+            if (selectedProvider === 'anthropic') {
+                anthropicConfig.forEach(el => el.style.display = 'block');
+            } else if (selectedProvider === 'openai') {
+                openaiConfig.forEach(el => el.style.display = 'block');
+            } else if (selectedProvider === 'openrouter') {
+                openrouterConfig.forEach(el => el.style.display = 'block');
+            }
+        }
+
+        // Mettre à jour l'affichage au chargement
+        updateVisibility();
+
+        // Mettre à jour l'affichage lors du changement de provider
+        providerSelect.addEventListener('change', updateVisibility);
+    });
+</script>
+{% endblock %}

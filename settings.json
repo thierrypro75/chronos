@@ -1,0 +1,9 @@
+{
+    "AI_PROVIDER": "anthropic",
+    "ANTHROPIC_API_KEY": "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",
+    "ANTHROPIC_MODEL": "claude-3-7-sonnet-20250219",
+    "OPENAI_API_KEY": "",
+    "OPENAI_MODEL": "gpt-4-turbo-preview",
+    "OPENROUTER_API_KEY": "",
+    "OPENROUTER_MODEL": "anthropic/claude-3-opus-20240229"
+}

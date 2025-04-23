@@ -1,39 +1,31 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
-    <header>
-        <h1>Chronos</h1>
-        <p>Analyseur de cahier des charges</p>
-    </header>
-    <main>
-        <section class="upload-section">
-            <h2>Uploader un cahier des charges</h2>
-            {% with messages = get_flashed_messages() %}
-                {% if messages %}
-                    <div class="messages">
-                        {% for message in messages %}
-                            <p class="alert">{{ message }}</p>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-            <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label for="file">Sélectionner un fichier PDF:</label>
-                    <input type="file" name="file" id="file" accept=".pdf" required>
-                </div>
-                <button type="submit" class="btn">Uploader et analyser</button>
-            </form>
-        </section>
-    </main>
-    <footer>
-        <p>&copy; 2023 Chronos - Analyseur de cahier des charges</p>
-    </footer>
-</body>
-</html> 
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<header>
+    <h1>Chronos</h1>
+    <p>Analyseur de cahier des charges</p>
+</header>
+<main>
+    <section class="upload-section">
+        <h2>Uploader un cahier des charges</h2>
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+            <p class="alert">{{ message }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">Sélectionner un fichier PDF:</label>
+                <input type="file" name="file" id="file" accept=".pdf" required>
+            </div>
+            <button type="submit" class="btn">Uploader et analyser</button>
+        </form>
+    </section>
+</main>
+{% endblock %}

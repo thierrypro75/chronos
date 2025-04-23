@@ -5,14 +5,15 @@ import re
 import json
 import uuid
 import time
+import traceback
 from werkzeug.utils import secure_filename
+from config import Config, save_config_to_json
+from ai_providers import get_provider, AIProvider
+import anthropic
+import openai
 
 app = Flask(__name__)
-app.secret_key = 'chronos_secret_key'
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['RESULTS_FOLDER'] = 'results'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
-app.config['ALLOWED_EXTENSIONS'] = {'pdf'}
+app.config.from_object(Config)
 
 # Cache buster pour les fichiers statiques
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
@@ -154,501 +155,146 @@ def format_markdown_text(text):
     return text
 
 def analyze_requirements(pdf_content, additional_info=""):
-    """Simule l'analyse du cahier des charges (version de démonstration)"""
-    # Extrait quelques mots-clés du PDF pour personnaliser la démo
-    keywords = []
-    if "web" in pdf_content.lower():
-        keywords.append("site web")
-    if "mobile" in pdf_content.lower():
-        keywords.append("application mobile")
-    if "api" in pdf_content.lower():
-        keywords.append("API")
-    if "database" in pdf_content.lower() or "données" in pdf_content.lower():
-        keywords.append("base de données")
+    """Analyse le cahier des charges en utilisant le provider d'IA configuré, en deux étapes si nécessaire."""
+    provider_name = Config.AI_PROVIDER
+    analysis_result_part1 = None
+    analysis_result_part2 = None
     
-    if not keywords:
-        keywords = ["application"]
-    
-    project_type = " et ".join(keywords)
-    
-    # Extraction des technologies si mentionnées dans les informations supplémentaires
-    technologies = []
-    if additional_info:
-        tech_keywords = ["react", "angular", "vue", "node", "java", "spring", "python", "django", "flask", 
-                        "php", "laravel", "symfony", ".net", "c#", "golang", "ruby", "rails", "html", "css", 
-                        "javascript", "typescript", "sql", "nosql", "mongodb", "postgresql", "mysql", "oracle", 
-                        "aws", "azure", "gcp", "docker", "kubernetes"]
+    try:
+        # --- Configuration Retrieval & Get Provider --- 
+        provider_name = Config.AI_PROVIDER
+        api_key = ''
+        model = ''
+        if provider_name == 'anthropic':
+            api_key = Config.ANTHROPIC_API_KEY
+            model = Config.ANTHROPIC_MODEL
+        elif provider_name == 'openai':
+            api_key = Config.OPENAI_API_KEY
+            model = Config.OPENAI_MODEL
+        elif provider_name == 'openrouter':
+            api_key = Config.OPENROUTER_API_KEY
+            model = Config.OPENROUTER_MODEL
         
-        for tech in tech_keywords:
-            if tech.lower() in additional_info.lower():
-                technologies.append(tech)
-    
-    # Génère un résultat de démonstration
-    demo_result = f"""<output>
-<project_charter>
-# Charte de Projet
+        if not api_key:
+            raise ValueError(f"Clé API non configurée pour le provider {provider_name}.")
+            
+        provider: AIProvider = get_provider(provider_name=provider_name, api_key=api_key, model=model)
 
-## Informations générales
-- **Nom du projet**: Développement d'une {project_type}
-- **Date de début**: 01/05/2023
-- **Date de fin prévue**: 01/11/2023
-- **Chef de projet**: À déterminer
+        # --- Appel 1: Sections 1-3 --- 
+        print("--- Calling AI for Part 1 (Charter, Backlog, Estimation) ---")
+        prompt_part1 = f"""Analyse le cahier des charges suivant et génère les 3 premières sections demandées.
 
-## Objectifs
-Le projet vise à développer une {project_type} répondant aux besoins décrits dans le cahier des charges. 
-L'objectif principal est de fournir une solution robuste, évolutive et conforme aux standards actuels.
-
-## Périmètre du projet
-
-### Dans le périmètre (In Scope)
-- Analyse détaillée des besoins fonctionnels et techniques
-- Conception de l'architecture système
-- Développement des fonctionnalités identifiées dans le backlog
-- Tests unitaires, d'intégration et de validation
-- Déploiement en environnement de production
-- Formation des utilisateurs
-- Documentation technique et utilisateur
-- Support post-déploiement pour une durée de 3 mois
-
-### Hors périmètre (Out of Scope)
-- Maintenance évolutive au-delà de la période de support
-- Développement de fonctionnalités non spécifiées dans le backlog initial
-- Migration des données existantes (sauf mention contraire dans le cahier des charges)
-- Formation avancée pour les administrateurs système
-- Support technique au-delà de la période convenue
-- Intégration avec des systèmes tiers non mentionnés dans le cahier des charges
-
-## Contraintes
-- **Contraintes de temps**: Livraison nécessaire avant la fin de l'année fiscale
-- **Contraintes budgétaires**: Budget fixe, sans possibilité d'extension
-- **Contraintes techniques**: {", ".join(technologies) if technologies else "À définir selon les exigences du client"}
-- **Contraintes légales**: Conformité au RGPD et autres réglementations applicables
-- **Contraintes de ressources**: Équipe limitée à un maximum de 8 personnes
-- **Contraintes d'infrastructure**: Déploiement sur l'infrastructure existante du client
-
-## Livrables
-- Spécifications techniques détaillées
-- Code source complet et documenté
-- Documentation utilisateur et technique
-- Rapport de tests
-- Solution déployée et opérationnelle
-
-## Parties prenantes
-- Client: Direction et utilisateurs finaux
-- Équipe projet: Développeurs, designers, testeurs, chef de projet
-- Partenaires techniques éventuels
-
-## Budget estimé
-À déterminer suite à l'analyse détaillée des besoins et à la planification du projet.
+        Texte du cahier des charges:
+        {pdf_content}
+        
+        Informations supplémentaires:
+        {additional_info}
+        
+        Génère UNIQUEMENT les sections suivantes:
+        1. Charte de projet (<project_charter>...</project_charter>)
+        2. Backlog produit (<product_backlog>...</product_backlog>)
+        3. Estimation d'effort (<effort_estimation>...</effort_estimation>)
+        
+        Format de sortie attendu (UNIQUEMENT ces 3 sections):
+        <output_part1>
+        <project_charter>
+        ...
 </project_charter>
-
 <product_backlog>
-# Backlog Produit
-
-## Epic 1: Architecture et Infrastructure
-- **US1.1**: En tant qu'administrateur système, je veux une architecture scalable afin de supporter la charge attendue de 1000 utilisateurs simultanés. (M)
-  - Critères d'acceptation:
-    - L'application doit supporter au moins 1000 connexions simultanées
-    - Le temps de réponse doit rester inférieur à 2 secondes sous charge
-    - Le système doit pouvoir être facilement étendu horizontalement
-  - Tâches techniques:
-    - Conception de l'architecture système
-    - Configuration du load balancer
-    - Tests de performance sous charge
-
-- **US1.2**: En tant que développeur, je veux un environnement de développement configuré afin de commencer le développement rapidement. (S)
-  - Critères d'acceptation:
-    - Documentation complète du processus d'installation
-    - Configuration automatisée via des scripts
-    - Environnements de développement, test et production distincts
-  - Tâches techniques:
-    - Création des scripts d'automatisation
-    - Configuration des environnements
-    - Documentation du processus
-
-- **US1.3**: En tant qu'administrateur, je veux une solution de déploiement automatisée afin de faciliter les mises à jour. (L)
-  - Critères d'acceptation:
-    - Pipeline CI/CD fonctionnel
-    - Déploiement en un clic
-    - Possibilité de rollback en cas d'échec
-  - Tâches techniques:
-    - Configuration de Jenkins/GitLab CI
-    - Écriture des scripts de déploiement
-    - Tests de déploiement automatique
-
-## Epic 2: Authentification et Gestion des Utilisateurs
-- **US2.1**: En tant qu'utilisateur, je veux pouvoir créer un compte afin d'accéder aux fonctionnalités. (M)
-  - Critères d'acceptation:
-    - Formulaire d'inscription avec validation des champs
-    - Confirmation par email
-    - Respect des normes RGPD pour le stockage des données
-  - Tâches techniques:
-    - Développement du formulaire d'inscription
-    - Intégration avec le service d'emails
-    - Stockage sécurisé des données utilisateur
-
-- **US2.2**: En tant qu'utilisateur, je veux pouvoir me connecter de façon sécurisée afin de protéger mes données. (M)
-  - Critères d'acceptation:
-    - Authentification à deux facteurs
-    - Verrouillage de compte après plusieurs tentatives échouées
-    - Session timeout après période d'inactivité
-  - Tâches techniques:
-    - Implémentation du système d'authentification
-    - Configuration des politiques de sécurité
-    - Tests de pénétration du système d'authentification
-
-- **US2.3**: En tant qu'utilisateur, je veux pouvoir réinitialiser mon mot de passe afin de récupérer l'accès à mon compte. (S)
-  - Critères d'acceptation:
-    - Processus de réinitialisation par email
-    - Lien à usage unique et limité dans le temps
-    - Instructions claires pour l'utilisateur
-  - Tâches techniques:
-    - Développement du flux de réinitialisation
-    - Génération sécurisée des tokens
-    - Intégration avec le service d'emails
-
-- **US2.4**: En tant qu'administrateur, je veux pouvoir gérer les utilisateurs afin de maintenir la sécurité du système. (L)
-  - Critères d'acceptation:
-    - Interface d'administration complète
-    - Possibilité de bloquer/débloquer des comptes
-    - Gestion des rôles et permissions
-  - Tâches techniques:
-    - Développement du tableau de bord admin
-    - Implémentation du système de rôles
-    - Tests des fonctionnalités administratives
-
-## Epic 3: Fonctionnalités Principales
-- **US3.1**: En tant qu'utilisateur, je veux pouvoir naviguer facilement dans l'interface afin de trouver rapidement ce que je cherche. (M)
-  - Critères d'acceptation:
-    - Navigation intuitive et responsive
-    - Temps de chargement des pages < 1 seconde
-    - Compatibilité multi-navigateurs
-  - Tâches techniques:
-    - Conception de l'interface utilisateur
-    - Optimisation des performances frontend
-    - Tests cross-browser
-
-- **US3.2**: En tant qu'utilisateur, je veux pouvoir effectuer des recherches précises afin de trouver rapidement l'information. (L)
-  - Critères d'acceptation:
-    - Moteur de recherche avec filtres avancés
-    - Résultats pertinents et triables
-    - Suggestions de recherche
-  - Tâches techniques:
-    - Implémentation de l'algorithme de recherche
-    - Création de l'interface de recherche
-    - Indexation des données pour performances
-
-- **US3.3**: En tant qu'utilisateur, je veux pouvoir sauvegarder mes préférences afin de personnaliser mon expérience. (M)
-  - Critères d'acceptation:
-    - Paramètres de personnalisation accessibles
-    - Sauvegarde automatique des préférences
-    - Application immédiate des changements
-  - Tâches techniques:
-    - Développement du système de préférences
-    - Stockage des préférences utilisateur
-    - Tests des fonctionnalités de personnalisation
-
-## Epic 4: Gestion des Données
-- **US4.1**: En tant qu'utilisateur, je veux pouvoir importer des données afin de les utiliser dans le système. (L)
-  - Critères d'acceptation:
-    - Support des formats CSV, Excel et JSON
-    - Validation des données importées
-    - Gestion des erreurs avec feedback clair
-  - Tâches techniques:
-    - Développement des parsers pour différents formats
-    - Implémentation de la validation des données
-    - Création de l'interface d'import
-
-- **US4.2**: En tant qu'utilisateur, je veux pouvoir exporter des données afin de les utiliser ailleurs. (M)
-  - Critères d'acceptation:
-    - Export en plusieurs formats (CSV, Excel, PDF)
-    - Sélection des données à exporter
-    - Options de formatage
-  - Tâches techniques:
-    - Développement des générateurs de fichiers
-    - Création de l'interface d'export
-    - Tests des différents formats d'export
-
-- **US4.3**: En tant qu'administrateur, je veux des sauvegardes automatiques afin de prévenir la perte de données. (L)
-  - Critères d'acceptation:
-    - Sauvegardes quotidiennes automatisées
-    - Procédure de restauration testée
-    - Notifications en cas d'échec
-  - Tâches techniques:
-    - Configuration du système de backup
-    - Implémentation des scripts de sauvegarde
-    - Tests de restauration
-
-## Epic 5: Rapports et Analyses
-- **US5.1**: En tant qu'utilisateur, je veux générer des rapports personnalisés afin d'analyser les données selon mes besoins. (XL)
-  - Critères d'acceptation:
-    - Interface de création de rapports flexible
-    - Multiples visualisations disponibles (graphiques, tableaux)
-    - Export des rapports en PDF et Excel
-  - Tâches techniques:
-    - Développement du moteur de génération de rapports
-    - Création des templates de visualisation
-    - Intégration d'une bibliothèque de graphiques
-
-- **US5.2**: En tant qu'administrateur, je veux consulter des statistiques d'utilisation afin d'optimiser les performances. (L)
-  - Critères d'acceptation:
-    - Tableau de bord temps réel
-    - Historique des métriques
-    - Alertes configurables
-  - Tâches techniques:
-    - Implémentation du système de collecte de métriques
-    - Développement du tableau de bord
-    - Configuration du système d'alertes
-
-## Epic 6: Documentation et Support
-- **US6.1**: En tant qu'utilisateur, je veux accéder à une documentation claire afin de comprendre comment utiliser l'application. (M)
-  - Critères d'acceptation:
-    - Documentation complète avec captures d'écran
-    - Système d'aide contextuelle
-    - FAQ et tutoriels vidéo
-  - Tâches techniques:
-    - Rédaction de la documentation
-    - Développement du système d'aide contextuelle
-    - Production des tutoriels vidéo
-
-- **US6.2**: En tant qu'utilisateur, je veux pouvoir signaler un problème afin d'obtenir de l'aide. (S)
-  - Critères d'acceptation:
-    - Formulaire de rapport de bug accessible
-    - Système de tickets avec suivi
-    - Notifications par email des mises à jour
-  - Tâches techniques:
-    - Développement du système de tickets
-    - Intégration email
-    - Interface de gestion des tickets
+        ...
 </product_backlog>
-
 <effort_estimation>
-# Estimation de l'Effort par un Développeur Senior
+        ...
+        </effort_estimation>
+        </output_part1>
+        """
+        analysis_result_part1 = provider.analyze_text(prompt_part1, "")
+        
+        if not analysis_result_part1:
+             raise Exception("Échec de la première partie de l'analyse.")
+        print("--- Part 1 Analysis Received ---")
 
-## Introduction
-L'estimation suivante a été réalisée par un développeur senior avec 10 ans d'expérience dans des projets similaires. Cette estimation tient compte de la complexité technique, des dépendances entre les tâches, et des contraintes identifiées dans le projet.
+        # --- Appel 2: Sections 4-6 --- 
+        print("--- Calling AI for Part 2 (Roadmap, Methodology, Risks) ---")
+        prompt_part2 = f"""En te basant sur le cahier des charges original et la première partie de l'analyse fournie ci-dessous, génère les 3 DERNIÈRES sections demandées.
+        
+        Texte du cahier des charges original (pour référence):
+        {pdf_content}
 
-## Récapitulatif par Epic
+        Informations supplémentaires originales (pour référence):
+        {additional_info}
 
-| Epic | Titre | Nombre de User Stories | Effort Total |
-|------|-------|------------------------|--------------|
-| 1 | Architecture et Infrastructure | 3 | 1.75 jours |
-| 2 | Authentification et Gestion des Utilisateurs | 4 | 2.5 jours |
-| 3 | Fonctionnalités Principales | 3 | 2.25 jours |
-| 4 | Gestion des Données | 3 | 2.5 jours |
-| 5 | Rapports et Analyses | 2 | 2.25 jours |
-| 6 | Documentation et Support | 2 | 1.25 jours |
+        Première partie de l'analyse (Charte, Backlog, Estimation):
+        {analysis_result_part1}
 
-## Détail des estimations
+        Génère UNIQUEMENT les sections suivantes, en assurant la cohérence avec la première partie:
+        4. Roadmap (<roadmap>...</roadmap>)
+        5. Méthodologie (<methodology>...</methodology>)
+        6. Gestion des risques (<risk_management>...</risk_management>)
 
-### Légende
-- S (Small): 0.25 jour (1-2 heures) - Tâche simple avec peu de complexité
-- M (Medium): 0.75 jour (5-6 heures) - Tâche standard avec complexité modérée
-- L (Large): 1.25 jours (8-10 heures) - Tâche complexe nécessitant une expertise technique
-- XL (Extra Large): 2 jours (16 heures) - Tâche très complexe avec risques techniques
-
-### Justification des estimations clés
-- **US1.1 (Architecture scalable)**: Estimé à M (0.75 jour) car bien que conceptuellement complexe, l'utilisation de patterns établis et de services cloud réduit l'effort de mise en œuvre.
-- **US2.4 (Gestion des utilisateurs)**: Estimé à L (1.25 jours) en raison de la complexité de gestion des permissions et des considérations de sécurité.
-- **US3.2 (Recherche avancée)**: Estimé à L (1.25 jours) car l'implémentation d'un système de recherche performant nécessite un travail significatif sur l'indexation et les algorithmes.
-- **US5.1 (Rapports personnalisés)**: Estimé à XL (2 jours) en raison de la complexité de création d'un système flexible de génération de rapports et des diverses visualisations requises.
-
-### Détails par User Story
-
-| User Story | Estimation | Jours | Justification technique |
-|------------|------------|-------|-------------------------|
-| US1.1 | M | 0.75 | Conception d'architecture avec possibilité de mise à l'échelle horizontale |
-| US1.2 | S | 0.25 | Scripts d'automatisation déjà disponibles, nécessitant des adaptations mineures |
-| US1.3 | L | 1.25 | Configuration complète d'un pipeline CI/CD avec tests automatisés |
-| US2.1 | M | 0.75 | Implémentation de formulaires et validation côté serveur avec sécurité RGPD |
-| US2.2 | M | 0.75 | Authentification sécurisée avec 2FA et gestion des sessions |
-| US2.3 | S | 0.25 | Système standard de réinitialisation de mot de passe |
-| US2.4 | L | 1.25 | Interface d'administration complète avec gestion des rôles et permissions |
-| US3.1 | M | 0.75 | UI/UX responsive avec optimisation des performances |
-| US3.2 | L | 1.25 | Implémentation d'un moteur de recherche performant avec filtres |
-| US3.3 | M | 0.75 | Système de préférences utilisateur avec persistence |
-| US4.1 | L | 1.25 | Système d'import multi-format avec validation robuste |
-| US4.2 | M | 0.75 | Système d'export dans différents formats |
-| US4.3 | L | 1.25 | Système de sauvegarde automatisé avec restauration testée |
-| US5.1 | XL | 2.0 | Moteur complexe de génération de rapports personnalisés |
-| US5.2 | L | 1.25 | Système de métriques en temps réel avec historique |
-| US6.1 | M | 0.75 | Documentation complète avec aide contextuelle |
-| US6.2 | S | 0.25 | Système simple de tickets de support |
-
-## Total global: 12.5 jours de développement
-
-À ce total, il convient d'ajouter:
-- Gestion de projet: 2.5 jours (20%)
-- Tests et assurance qualité: 3.75 jours (30%)
-- Contingence: 2.5 jours (20%)
-
-**Effort total estimé: 21.25 jours**
-
-## Facteurs de complexité considérés
-- Complexité des interfaces utilisateur
-- Sécurité et protection des données
-- Performance sous charge
-- Intégration avec des systèmes existants
-- Contraintes techniques identifiées: {", ".join(technologies) if technologies else "à définir"}
-</effort_estimation>
-
+        Format de sortie attendu (UNIQUEMENT ces 3 sections):
+        <output_part2>
 <roadmap>
-# Roadmap du Projet
-
-## Phase 1: Initialisation et Fondations (4 semaines)
-- Mise en place de l'environnement de développement
-- Développement de l'architecture de base
-- Implémentation du système d'authentification
-- **Epics concernés**: Epic 1, Epic 2
-- **User Stories**: US1.1, US1.2, US2.1, US2.2, US2.3
-
-## Phase 2: Fonctionnalités Essentielles (6 semaines)
-- Développement des fonctionnalités principales
-- Mise en place de la gestion des données
-- Développement des interfaces utilisateur
-- **Epics concernés**: Epic 3, Epic 4
-- **User Stories**: US3.1, US3.2, US3.3, US4.1, US4.2
-
-## Phase 3: Fonctionnalités Avancées (4 semaines)
-- Implémentation des rapports et analyses
-- Finalisation de la gestion des utilisateurs
-- Développement des fonctionnalités de sauvegarde
-- **Epics concernés**: Epic 2, Epic 4, Epic 5
-- **User Stories**: US2.4, US4.3, US5.1, US5.2
-
-## Phase 4: Finalisation et Déploiement (3 semaines)
-- Documentation complète
-- Tests finaux et corrections de bugs
-- Déploiement et configuration de l'infrastructure
-- Formation des utilisateurs
-- **Epics concernés**: Epic 1, Epic 6
-- **User Stories**: US1.3, US6.1, US6.2
-
-## Jalons Clés
-- **M1** (Fin Phase 1): Prototype fonctionnel avec authentification
-- **M2** (Fin Phase 2): Version bêta avec fonctionnalités essentielles
-- **M3** (Fin Phase 3): Version complète prête pour tests finaux
-- **M4** (Fin Phase 4): Déploiement en production
-
-## Planning prévisionnel
-- **Début du projet**: 01/05/2023
-- **Fin de la Phase 1**: 31/05/2023
-- **Fin de la Phase 2**: 15/07/2023
-- **Fin de la Phase 3**: 15/08/2023
-- **Fin de la Phase 4 / Livraison finale**: 01/09/2023
+        ...
 </roadmap>
-
 <methodology>
-# Méthodologie du Projet
-
-## Approche Agile Scrum
-
-Le projet sera géré selon la méthodologie Agile Scrum, permettant une adaptation rapide aux besoins changeants et une livraison itérative de valeur.
-
-### Organisation des Sprints
-- **Durée des sprints**: 2 semaines
-- **Réunions quotidiennes** (Daily Stand-up): 15 minutes chaque matin
-- **Planification de sprint** au début de chaque sprint
-- **Revue de sprint** à la fin de chaque sprint
-- **Rétrospective** après chaque sprint pour amélioration continue
-
-### Équipe Scrum
-- **Product Owner**: Représentant du client
-- **Scrum Master**: À désigner
-- **Équipe de développement**: 3-5 développeurs, 1 designer UX/UI, 1 testeur
-
-### Outils de gestion
-- **Gestion de projet**: Jira ou Trello
-- **Référentiel de code**: GitHub ou GitLab
-- **Communication**: Slack et Microsoft Teams
-- **Documentation**: Confluence ou Wiki interne
-
-## Pratiques de Développement
-
-### Développement
-- **Intégration continue / Déploiement continu** (CI/CD)
-- **Revue de code par les pairs** avant toute fusion dans la branche principale
-- **Tests automatisés** (unitaires, d'intégration, fonctionnels)
-- **Approche TDD** (Test-Driven Development) quand applicable
-
-### Qualité
-- **Standards de codage** définis et appliqués
-- **Mesures de qualité de code** via SonarQube ou équivalent
-- **Tests de non-régression** systématiques
-- **Tests de performance** pour les fonctionnalités critiques
-
-## Communication et Reporting
-
-### Avec le client
-- **Démonstration** à la fin de chaque sprint
-- **Rapports d'avancement** bimensuels
-- **Comité de pilotage** mensuel
-
-### En interne
-- **Tableau de bord** de progression visible par tous
-- **Indicateurs de performance** (vélocité, dette technique, etc.)
-- **Gestion des risques** mise à jour régulièrement
-
-## Livraison et Déploiement
-- **Environnements séparés**: développement, test, préproduction, production
-- **Stratégie de déploiement** avec possibilité de rollback
-- **Période de stabilisation** avant chaque mise en production majeure
-- **Monitoring** post-déploiement
+        ...
 </methodology>
-
 <risk_management>
-# Analyse et Gestion des Risques
+        ...
+        </risk_management>
+        </output_part2>
+        """
+        analysis_result_part2 = provider.analyze_text(prompt_part2, "")
 
-## Matrice d'évaluation
-- **Probabilité**: 1 (Très faible) à 5 (Très élevée)
-- **Impact**: 1 (Minimal) à 5 (Critique)
-- **Criticité** = Probabilité × Impact
+        if not analysis_result_part2:
+             raise Exception("Échec de la deuxième partie de l'analyse.")
+        print("--- Part 2 Analysis Received ---")
 
-## Risques Identifiés
+        # --- Robust Extraction & Combination --- 
+        sections_content = {}
+        section_names = ['project_charter', 'product_backlog', 'effort_estimation', 'roadmap', 'methodology', 'risk_management']
+        
+        # Extract from Part 1 result
+        for i in range(3):
+            section = section_names[i]
+            pattern = f'<{section}>(.*?)</{section}>'
+            match = re.search(pattern, analysis_result_part1, re.DOTALL)
+            if match:
+                sections_content[section] = match.group(1).strip()
+            else:
+                print(f"WARN: Section '{section}' not found in Part 1 result.")
+                sections_content[section] = "" # Add empty string if not found
+                
+        # Extract from Part 2 result
+        for i in range(3, 6):
+            section = section_names[i]
+            pattern = f'<{section}>(.*?)</{section}>'
+            match = re.search(pattern, analysis_result_part2, re.DOTALL)
+            if match:
+                sections_content[section] = match.group(1).strip()
+            else:
+                print(f"WARN: Section '{section}' not found in Part 2 result.")
+                sections_content[section] = "" # Add empty string if not found
 
-| ID | Description du risque | Probabilité | Impact | Criticité | Stratégie de mitigation |
-|----|------------------------|------------|--------|-----------|-------------------------|
-| R1 | Changements majeurs des exigences en cours de projet | 3 | 4 | 12 | Validation régulière avec le client, approche agile pour s'adapter aux changements |
-| R2 | Difficultés techniques imprévues | 3 | 3 | 9 | Prototypage précoce des composants critiques, expertise technique mobilisable |
-| R3 | Indisponibilité de ressources clés | 2 | 4 | 8 | Documentation continue, partage des connaissances, polyvalence de l'équipe |
-| R4 | Problèmes d'intégration avec des systèmes existants | 3 | 4 | 12 | Tests d'intégration précoces, spécifications détaillées des interfaces |
-| R5 | Performance insuffisante du système | 2 | 5 | 10 | Tests de charge réguliers, conception orientée performance |
-| R6 | Problèmes de sécurité | 2 | 5 | 10 | Audits de sécurité réguliers, développement selon les bonnes pratiques de sécurité |
-| R7 | Retards dans le développement | 3 | 3 | 9 | Suivi rigoureux de l'avancement, alertes précoces, ajustement des priorités |
-| R8 | Problèmes de qualité affectant l'expérience utilisateur | 3 | 4 | 12 | Tests utilisateurs réguliers, implication précoce des utilisateurs finaux |
-| R9 | Sous-estimation de l'effort nécessaire | 3 | 4 | 12 | Estimation avec marge, révision régulière des estimations, suivi de la vélocité |
-| R10 | Problèmes de communication avec le client | 2 | 4 | 8 | Points de contact clairs, réunions régulières, documentation des décisions |
+        # Combine extracted sections into the final format
+        final_result = "<output>\n"
+        for section in section_names:
+            final_result += f"<{section}>\n{sections_content.get(section, '')}\n</{section}>\n"
+        final_result += "</output>"
+        
+        print("--- Analysis Parts Extracted and Combined ---")
+        return final_result
 
-## Plan de contingence pour les risques critiques (≥ 12)
-
-### R1: Changements majeurs des exigences
-- Établir un processus formel de gestion des changements
-- Prévoir une contingence budgétaire et temporelle de 20%
-- Prioriser régulièrement les exigences avec le client
-
-### R4: Problèmes d'intégration
-- Désigner un responsable d'intégration
-- Créer des environnements de test reproduisant les conditions réelles
-- Préparer des alternatives techniques si nécessaire
-
-### R8: Problèmes de qualité UX
-- Mettre en place des tests utilisateurs dès les premières versions
-- Impliquer un expert UX/UI dès la phase de conception
-- Définir des critères d'acceptation précis pour chaque fonctionnalité
-
-### R9: Sous-estimation de l'effort
-- Appliquer une marge de 30% sur les estimations critiques
-- Effectuer des estimations collaboratives (Planning Poker)
-- Réévaluer les estimations au fur et à mesure du projet
-
-## Suivi des risques
-- Révision de la liste des risques à chaque réunion de planification de sprint
-- Rapport d'état des risques lors des comités de pilotage
-- Désignation d'un responsable pour chaque risque identifié
-</risk_management>
-</output>"""
-    
-    return demo_result
+    except Exception as e:
+        print(f"--- ERROR in analyze_requirements ({provider_name}): {type(e).__name__} - {e} ---")
+        if isinstance(e, ValueError) and "Clé API non configurée" in str(e):
+             flash(str(e))
+        elif isinstance(e, (anthropic.AuthenticationError, openai.AuthenticationError)):
+             flash(f"Erreur d'authentification {provider_name.capitalize()}: Vérifiez votre clé API.")
+        else:
+             flash(f"Erreur lors de l'analyse ({provider_name}): {str(e)}") 
+        return None
 
 def save_analysis_result(result):
     """Sauvegarde le résultat d'analyse dans un fichier temporaire"""
@@ -680,6 +326,41 @@ def get_analysis_result(result_id):
     with open(result_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
         return data.get('result')
+
+@app.route('/config')
+def config():
+    """Affiche la page de configuration"""
+    return render_template('config.html', title='Configuration', config=Config)
+
+@app.route('/save_config', methods=['POST'])
+def save_config():
+    """Sauvegarde la configuration en mémoire ET dans settings.json."""
+    # --- Mise à jour en mémoire --- 
+    Config.AI_PROVIDER = request.form.get('ai_provider', Config._defaults['AI_PROVIDER']) # Use default if missing
+    Config.ANTHROPIC_API_KEY = request.form.get('anthropic_api_key', Config._defaults['ANTHROPIC_API_KEY'])
+    # Utiliser la valeur par défaut correcte du config.py si le formulaire ne la renvoie pas
+    Config.ANTHROPIC_MODEL = request.form.get('anthropic_model', Config._defaults['ANTHROPIC_MODEL'])
+    
+    Config.OPENAI_API_KEY = request.form.get('openai_api_key', Config._defaults['OPENAI_API_KEY'])
+    Config.OPENAI_MODEL = request.form.get('openai_model', Config._defaults['OPENAI_MODEL'])
+    
+    Config.OPENROUTER_API_KEY = request.form.get('openrouter_api_key', Config._defaults['OPENROUTER_API_KEY'])
+    Config.OPENROUTER_MODEL = request.form.get('openrouter_model', Config._defaults['OPENROUTER_MODEL'])
+
+    # --- Sauvegarde persistante en JSON --- 
+    current_config_data = {
+        'AI_PROVIDER': Config.AI_PROVIDER,
+        'ANTHROPIC_API_KEY': Config.ANTHROPIC_API_KEY,
+        'ANTHROPIC_MODEL': Config.ANTHROPIC_MODEL,
+        'OPENAI_API_KEY': Config.OPENAI_API_KEY,
+        'OPENAI_MODEL': Config.OPENAI_MODEL,
+        'OPENROUTER_API_KEY': Config.OPENROUTER_API_KEY,
+        'OPENROUTER_MODEL': Config.OPENROUTER_MODEL
+    }
+    save_config_to_json(current_config_data)
+    
+    flash('Configuration sauvegardée avec succès.') # Message flash mis à jour
+    return redirect(url_for('config'))
 
 @app.route('/reset')
 def reset_analysis():
@@ -754,17 +435,26 @@ def run_analysis():
         flash('Veuillez d\'abord télécharger un fichier PDF')
         return redirect(url_for('home'))
     
-    # Récupérer les informations supplémentaires si renseignées
     additional_info = request.form.get('additional_info', '')
     
-    # Exécuter l'analyse AMOA avec les informations supplémentaires
+    # analyze_requirements gère maintenant les deux appels
     analysis_result = analyze_requirements(session['pdf_text'], additional_info)
     
-    # Sauvegarder le résultat dans un fichier et obtenir son ID
-    result_id = save_analysis_result(analysis_result)
+    # --- Log Raw Output (Combined) --- 
+    print("\n--- FINAL Combined Analysis Result ---")
+    if analysis_result:
+        print(analysis_result) # Log the combined result
+    else:
+        print("<No combined result generated>")
+    print("--------------------------------------\n")
+    # --- End Log Raw Output ---
     
-    # Stocker seulement l'ID dans la session
-    session['analysis_id'] = result_id
+    if analysis_result:
+        result_id = save_analysis_result(analysis_result)
+        session['analysis_id'] = result_id
+        flash('Analyse terminée avec succès')
+    else:
+        pass # Error flash handled in analyze_requirements
     
     return redirect(url_for('analyze'))
 
